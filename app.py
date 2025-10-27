@@ -341,5 +341,3 @@ with st.expander("Klik untuk melihat detail evaluasi 🔬"):
     )
     st.plotly_chart(fig_eval, use_container_width=True)
     st.caption("Semakin dekat titik-titik biru ke garis merah, semakin akurat prediksinya.")
-
-"""# Bagian Baru"""
