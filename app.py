@@ -12,6 +12,9 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
+# --- IMPORT TAMBAHAN UNTUK EVALUASI ---
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 # -----------------------------------------------------------------
 # KONFIGURASI HALAMAN
@@ -38,12 +41,13 @@ def get_production_recommendation(predicted_demand, safety_stock_pct):
 def load_and_train_model():
     """
     Fungsi ini membaca data historis dan melatih model regresi.
+    Model ini dilatih pada 100% data untuk prediksi MASA DEPAN.
     """
     try:
         df = pd.read_csv("data_sample.csv")
     except FileNotFoundError:
         st.error("ERROR: File 'data_sample.csv' tidak ditemukan. Pastikan file ada di folder yang sama.")
-        return None, None
+        return None, None, None
 
     # --- 2. TRAIN MODEL (Simulasi Backend 'Demand Forecasting Model') ---
 
@@ -59,10 +63,11 @@ def load_and_train_model():
     model = LinearRegression()
     model.fit(X_train, y_train)
 
-    return model, df
+    return model, df, features, target
 
 # Load data dan latih model
-model, df_history = load_and_train_model()
+# Kita tambahkan 'features' dan 'target' agar bisa dipakai di bagian evaluasi
+model, df_history, features, target = load_and_train_model()
 
 if model is None:
     st.stop()
@@ -251,5 +256,90 @@ fig_history.update_layout(
 
 st.plotly_chart(fig_history, use_container_width=True)
 st.caption("Grafik ini menunjukkan bagaimana Skor Tren (garis hijau) berkorelasi dengan Penjualan (garis biru). Model ML belajar dari pola ini.")
+
+# -----------------------------------------------------------------
+# --- 7. BAGIAN EVALUASI MODEL (BARU) ---
+# -----------------------------------------------------------------
+st.markdown("---")
+st.header("Hasil Uji Coba & Evaluasi Model")
+
+with st.expander("Klik untuk melihat detail evaluasi 🔬"):
+
+    st.markdown("""
+    Untuk menguji seberapa baik model ini, kita membagi data historis
+    menjadi **80% data training** dan **20% data testing**.
+    Model *evaluasi* dilatih hanya pada data training dan diuji pada data testing
+    untuk mengukur kinerjanya.
+
+    **(Catatan: Model untuk prediksi utama di atas tetap dilatih pada 100% data untuk akurasi maksimal).**
+    """)
+
+    # 1. Ambil X dan y dari data historis
+    X = df_history[features]
+    y = df_history[target]
+
+    # 2. Bagi data (80% train, 20% test)
+    # random_state=42 agar hasil pembagiannya selalu sama
+    X_train_eval, X_test_eval, y_train_eval, y_test_eval = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    # 3. Latih model evaluasi (HANYA PADA DATA TRAIN 80%)
+    model_eval = LinearRegression()
+    model_eval.fit(X_train_eval, y_train_eval)
+
+    # 4. Lakukan prediksi pada data test (20%)
+    y_pred_eval = model_eval.predict(X_test_eval)
+
+    # 5. Hitung metrik evaluasi
+    mae = mean_absolute_error(y_test_eval, y_pred_eval)
+    rmse = np.sqrt(mean_squared_error(y_test_eval, y_pred_eval))
+    r2 = r2_score(y_test_eval, y_pred_eval)
+
+    st.subheader("Metrik Evaluasi Model (pada 20% Data Test)")
+    mcol1, mcol2, mcol3 = st.columns(3)
+    mcol1.metric("R² (R-squared)", f"{r2:.2f}")
+    mcol2.metric("MAE (Mean Absolute Error)", f"{mae:.2f} unit")
+    mcol3.metric("RMSE (Root Mean Sq. Error)", f"{rmse:.2f} unit")
+
+    st.caption(
+        "**R²**: Seberapa baik model menjelaskan data (1.0 = sempurna). "
+        "**MAE/RMSE**: Rata-rata kesalahan prediksi (semakin kecil semakin baik)."
+    )
+    st.markdown("---")
+
+    # 6. Tampilkan contoh Actual vs Predicted
+    st.subheader("Contoh Hasil Prediksi (Data Test)")
+    results_df = pd.DataFrame({
+        'Penjualan Aktual': y_test_eval,
+        'Prediksi Model': y_pred_eval.round(0)
+    })
+    st.dataframe(results_df, use_container_width=True)
+
+    # 7. Visualisasi Actual vs Predicted
+    st.subheader("Visualisasi: Aktual vs. Prediksi")
+    fig_eval = go.Figure()
+    # Scatter plot
+    fig_eval.add_trace(go.Scatter(
+        x=y_test_eval,
+        y=y_pred_eval,
+        mode='markers',
+        name='Data Test'
+    ))
+    # Garis ideal (y=x)
+    fig_eval.add_trace(go.Scatter(
+        x=[y_test_eval.min(), y_test_eval.max()],
+        y=[y_test_eval.min(), y_test_eval.max()],
+        mode='lines',
+        name='Prediksi Ideal (Aktual = Prediksi)',
+        line=dict(color='red', dash='dash')
+    ))
+    fig_eval.update_layout(
+        title='Perbandingan Penjualan Aktual vs. Prediksi Model',
+        xaxis_title='Penjualan Aktual (Unit)',
+        yaxis_title='Penjualan Prediksi (Unit)'
+    )
+    st.plotly_chart(fig_eval, use_container_width=True)
+    st.caption("Semakin dekat titik-titik biru ke garis merah, semakin akurat prediksinya.")
 
 """# Bagian Baru"""
