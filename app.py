@@ -57,7 +57,7 @@ def load_and_train_model():
         df['USD_IDR'] = pd.to_numeric(df['USD_IDR'], errors='coerce')
         df = df.dropna()
 
-        # --- LATIH MODEL ---
+        # --- LATIH MODEL UTAMA (Untuk Prediksi Masa Depan) ---
         features = ['MonthIndex', 'TrendScore', 'USD_IDR']
         target = 'Sales'
 
@@ -89,7 +89,7 @@ last_row = df_history.iloc[-1]
 
 # 1. Tentukan Bulan Selanjutnya (Target Prediksi)
 next_date = last_row['Month'] + pd.DateOffset(months=1)
-next_month_text = format_bulan_indo(next_date) # Contoh: "Februari 2025"
+next_month_text = format_bulan_indo(next_date)
 
 # 2. Tentukan Index Selanjutnya
 next_month_index = int(last_row['MonthIndex']) + 1
@@ -223,3 +223,82 @@ with st.expander("Lihat Data CSV Lengkap"):
     df_display = df_history.copy()
     df_display['Month'] = df_display['Month'].apply(lambda x: format_bulan_indo(x))
     st.dataframe(df_display, use_container_width=True)
+
+# -----------------------------------------------------------------
+# --- EVALUASI MODEL (BAGIAN BARU) ---
+# -----------------------------------------------------------------
+st.markdown("---")
+st.header("🔬 Evaluasi Performa Model")
+st.write("Bagian ini menguji seberapa akurat model dengan membagi data menjadi data latih (80%) dan data uji (20%).")
+
+# 1. Persiapkan Data untuk Evaluasi
+X = df_history[features]
+y = df_history[target]
+
+# 2. Split Data (Train/Test)
+# random_state=42 agar hasil pembagiannya konsisten setiap kali dijalankan
+X_train_eval, X_test_eval, y_train_eval, y_test_eval = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# 3. Latih Model Evaluasi (Hanya menggunakan data training)
+model_eval = LinearRegression()
+model_eval.fit(X_train_eval, y_train_eval)
+
+# 4. Prediksi menggunakan data Test
+y_pred_eval = model_eval.predict(X_test_eval)
+
+# 5. Hitung Metrik
+mae = mean_absolute_error(y_test_eval, y_pred_eval)
+rmse = np.sqrt(mean_squared_error(y_test_eval, y_pred_eval))
+r2 = r2_score(y_test_eval, y_pred_eval)
+
+# 6. Tampilkan Metrik
+col_eval1, col_eval2, col_eval3 = st.columns(3)
+col_eval1.metric("MAE (Rata-rata Kesalahan)", f"{mae:.2f}", help="Semakin kecil semakin baik. Menunjukkan rata-rata selisih angka prediksi dengan aslinya.")
+col_eval2.metric("RMSE (Akar Kuadrat Error)", f"{rmse:.2f}", help="Semakin kecil semakin baik. Lebih sensitif terhadap kesalahan besar.")
+col_eval3.metric("R² Score (Akurasi Pola)", f"{r2:.4f}", help="Mendekati 1.0 semakin baik. Menunjukkan seberapa baik model mengikuti pola data.")
+
+# 7. Visualisasi Actual vs Predicted
+st.subheader("Grafik Prediksi vs Aktual (Data Test)")
+
+fig_eval = go.Figure()
+
+# Titik-titik data (Scatter Plot)
+fig_eval.add_trace(go.Scatter(
+    x=y_test_eval,
+    y=y_pred_eval,
+    mode='markers',
+    name='Data Test',
+    marker=dict(color='blue', size=10, opacity=0.7)
+))
+
+# Garis Ideal (Diagonal)
+# Jika prediksi sempurna, titik akan jatuh tepat di garis merah putus-putus ini
+min_val = min(y_test_eval.min(), y_pred_eval.min())
+max_val = max(y_test_eval.max(), y_pred_eval.max())
+
+fig_eval.add_trace(go.Scatter(
+    x=[min_val, max_val],
+    y=[min_val, max_val],
+    mode='lines',
+    name='Garis Ideal (Perfect Prediction)',
+    line=dict(color='red', dash='dash')
+))
+
+fig_eval.update_layout(
+    xaxis_title="Penjualan Aktual (Data Asli)",
+    yaxis_title="Penjualan Prediksi (Model)",
+    title="Seberapa dekat Prediksi dengan Kenyataan?",
+    showlegend=True
+)
+
+st.plotly_chart(fig_eval, use_container_width=True)
+
+st.caption("""
+**Cara membaca grafik ini:**
+* **Sumbu X (Bawah):** Nilai penjualan yang sebenarnya terjadi.
+* **Sumbu Y (Kiri):** Nilai penjualan yang diprediksi oleh komputer.
+* **Garis Merah Putus-putus:** Garis sempurna. Jika titik biru berada tepat di garis ini, berarti tebakan model 100% benar.
+* **Titik Biru:** Data pengujian. Semakin dekat titik-titik biru ke garis merah, semakin akurat model Anda.
+""")
