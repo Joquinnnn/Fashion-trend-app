@@ -179,7 +179,30 @@ fig_gauge = go.Figure(go.Indicator(
 ))
 st.plotly_chart(fig_gauge, use_container_width=True)
 
-# --- PENJELASAN VISUALISASI (DIPERBARUI) ---
+# -----------------------------------------------------------------
+# --- INDIKATOR STATUS (BARU) ---
+# -----------------------------------------------------------------
+col_stat1, col_stat2, col_stat3 = st.columns(3)
+
+with col_stat1:
+    st.metric("Prediksi Permintaan", f"{pred_demand} Unit")
+
+with col_stat2:
+    st.metric("Target Produksi", f"{reco_prod} Unit")
+
+with col_stat3:
+    st.markdown("**Status Inventory:**")
+    # Logika Status berdasarkan Safety Stock
+    if safety_stock_percent <= 25:
+        st.success("✅ **Aman (Optimal)**")
+    elif safety_stock_percent <= 40:
+        st.warning("⚠️ **Waspada (Stok Tebal)**")
+    else:
+        st.error("🛑 **Risiko Overproduction**")
+
+st.markdown("<br>", unsafe_allow_html=True) # Spasi
+
+# --- PENJELASAN VISUALISASI ---
 st.info("""
 **Cara Membaca Grafik Target:**
 * **Jarum / Angka Utama:** Total unit yang **harus diproduksi** (Rekomendasi Akhir).
@@ -297,7 +320,7 @@ fig_eval.update_layout(
 
 st.plotly_chart(fig_eval, use_container_width=True)
 
-# --- PENJELASAN EVALUASI (BAGIAN BARU) ---
+# --- PENJELASAN EVALUASI ---
 st.info("""
 **Penjelasan Metrik Evaluasi:**
 * **MAE (Mean Absolute Error):** Rata-rata kesalahan prediksi dalam unit (misal: meleset ±50 baju). Semakin kecil semakin baik.
