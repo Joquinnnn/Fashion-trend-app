@@ -25,6 +25,17 @@ st.set_page_config(
 )
 
 # -----------------------------------------------------------------
+# FUNGSI BANTUAN (FORMAT TANGGAL INDONESIA)
+# -----------------------------------------------------------------
+def format_bulan_indo(date_obj):
+    """Mengubah datetime menjadi string bulan Indonesia (Contoh: Februari 2025)"""
+    bulan_map = {
+        1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April', 5: 'Mei', 6: 'Juni',
+        7: 'Juli', 8: 'Agustus', 9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+    }
+    return f"{bulan_map[date_obj.month]} {date_obj.year}"
+
+# -----------------------------------------------------------------
 # FUNGSI MODEL PREDIKSI
 # -----------------------------------------------------------------
 def get_production_recommendation(predicted_demand, safety_stock_pct):
@@ -38,48 +49,55 @@ def get_production_recommendation(predicted_demand, safety_stock_pct):
 # -----------------------------------------------------------------
 @st.cache_data
 def load_and_train_model():
-    """
-    Fungsi ini membaca data historis dan melatih model regresi.
-    """
     try:
-        # Membaca CSV (Pastikan delimiter sesuai, misal koma atau titik koma)
-        # Kita asumsikan format standar CSV (koma)
         df = pd.read_csv("data_sample.csv")
     except FileNotFoundError:
         st.error("ERROR: File 'data_sample.csv' tidak ditemukan.")
         return None, None, None, None
 
-    # Pastikan tipe data benar
-    # MonthIndex dan USD_IDR harus angka
-    # Sales dan TrendScore harus angka
+    # --- BERSIH-BERSIH DATA ---
 
-    # Fitur yang digunakan untuk PREDIKSI (X)
-    # Kita menggunakan MonthIndex (urutan waktu), TrendScore, dan USD_IDR
+    # 1. Pastikan Kolom MonthIndex Ada
+    if 'MonthIndex' not in df.columns:
+        df['MonthIndex'] = np.arange(len(df)) + 1
+
+    # 2. Pastikan Kolom 'Month' dikenali sebagai Tanggal
+    if 'Month' in df.columns:
+        df['Month'] = pd.to_datetime(df['Month'], errors='coerce')
+
+    # 3. Konversi ke Angka
+    df['Sales'] = pd.to_numeric(df['Sales'], errors='coerce')
+    df['TrendScore'] = pd.to_numeric(df['TrendScore'], errors='coerce')
+    df['USD_IDR'] = pd.to_numeric(df['USD_IDR'], errors='coerce')
+
+    # 4. Hapus data kosong
+    df = df.dropna()
+
+    # --- LATIH MODEL ---
     features = ['MonthIndex', 'TrendScore', 'USD_IDR']
     target = 'Sales'
 
-    X_train = df[features]
-    y_train = df[target]
+    try:
+        X_train = df[features]
+        y_train = df[target]
+        model = LinearRegression()
+        model.fit(X_train, y_train)
+        return model, df, features, target
+    except Exception as e:
+        st.error(f"Terjadi error: {e}")
+        return None, None, None, None
 
-    # Latih model Linear Regression
-    model = LinearRegression()
-    model.fit(X_train, y_train)
-
-    return model, df, features, target
-
-# Load data dan latih model
+# Load data
 model, df_history, features, target = load_and_train_model()
 
 if model is None:
     st.stop()
 
 # -----------------------------------------------------------------
-# UI - SIDEBAR (Hanya Safety Stock)
+# UI - SIDEBAR
 # -----------------------------------------------------------------
 st.sidebar.header("Parameter Produksi")
-st.sidebar.info("Data Tren dan Ekonomi diambil otomatis dari data terakhir untuk prediksi bulan depan.")
 
-# INPUT USER SATU-SATUNYA
 safety_stock_percent = st.sidebar.slider(
     "Persentase Safety Stock (%)",
     min_value=0, max_value=50, value=20,
@@ -87,139 +105,115 @@ safety_stock_percent = st.sidebar.slider(
 )
 
 # -----------------------------------------------------------------
-# PROSES OTOMATISASI FITUR BULAN DEPAN
+# PROSES OTOMATISASI (DENGAN TANGGAL)
 # -----------------------------------------------------------------
-# Ambil baris data terakhir
 last_row = df_history.iloc[-1]
 
-# 1. Tentukan Bulan Depan (Next Month Index)
+# 1. Hitung MonthIndex Berikutnya (Untuk Rumus Matematika Model)
 next_month_index = int(last_row['MonthIndex']) + 1
 
-# 2. Prediksi/Asumsi Nilai Tren & Kurs untuk Bulan Depan
-# Strategi: Menggunakan nilai terakhir yang diketahui (Naive Method)
-# atau bisa menggunakan rata-rata 3 bulan terakhir.
-# Di sini kita gunakan nilai terakhir agar konsisten.
-next_trend_score = last_row['TrendScore']
-next_usd_idr = last_row['USD_IDR']
+# 2. Hitung NAMA BULAN Berikutnya (Untuk Tampilan User)
+# Default teks jika gagal hitung tanggal
+next_month_text = f"Bulan Index ke-{next_month_index}"
 
-# Tampilkan parameter otomatis di Sidebar agar user tahu
+if pd.notnull(last_row['Month']):
+    # Tambah 1 bulan dari tanggal terakhir
+    next_date = last_row['Month'] + pd.DateOffset(months=1)
+    next_month_text = format_bulan_indo(next_date) # Ubah jadi "Februari 2025"
+
+# 3. Ambil data Tren & Kurs terakhir
+next_trend_score = float(last_row['TrendScore'])
+next_usd_idr = float(last_row['USD_IDR'])
+
 st.sidebar.markdown("---")
-st.sidebar.subheader("Parameter Otomatis (Terdeteksi)")
-st.sidebar.text(f"Bulan Index ke: {next_month_index}")
-st.sidebar.text(f"Trend Score: {next_trend_score}")
-st.sidebar.text(f"Kurs USD/IDR: {next_usd_idr}")
+st.sidebar.subheader("Info Prediksi")
+st.sidebar.info(f"Target: **{next_month_text}**")
+st.sidebar.caption(f"Menggunakan data terakhir:\nTren: {next_trend_score}\nKurs: {next_usd_idr}")
 
 
 # -----------------------------------------------------------------
-# UI - HALAMAN UTAMA (Dashboard)
+# UI - HALAMAN UTAMA
 # -----------------------------------------------------------------
 st.title("👕 FashionTrendChecker (Auto Predict)")
-st.subheader(f"Prediksi Permintaan Bulan Berikutnya (Index {next_month_index})")
+st.subheader(f"Prediksi Permintaan: {next_month_text}")
 st.markdown("---")
 
 # -----------------------------------------------------------------
 # --- 3. BUAT PREDIKSI ---
 # -----------------------------------------------------------------
 
-# Siapkan data input untuk prediksi sesuai format features
+# Input ke model tetap pakai ANGKA (Index), tapi usernya melihat TANGGAL
 input_features = pd.DataFrame({
     'MonthIndex': [next_month_index],
     'TrendScore': [next_trend_score],
     'USD_IDR': [next_usd_idr]
 })
 
-# Lakukan prediksi
-pred_demand = model.predict(input_features)[0]
-pred_demand = int(pred_demand) # Bulatkan
-
-# Hitung rekomendasi
+# Prediksi
+pred_demand = int(model.predict(input_features)[0])
 reco_prod, safety_units = get_production_recommendation(pred_demand, safety_stock_percent)
 
 # -----------------------------------------------------------------
-# --- 4. TAMPILKAN HASIL PREDIKSI ---
+# --- 4. OUTPUT ---
 # -----------------------------------------------------------------
-st.header("Hasil Analisis & Rekomendasi 🎯")
-
-# Tampilkan metrik utama
 col1, col2 = st.columns(2)
 with col1:
     st.metric(
-        label="Prediksi Permintaan Pasar",
+        label=f"Prediksi Permintaan ({next_month_text})", # Label dinamis
         value=f"{pred_demand} unit"
     )
-    st.caption(f"""
-    **Basis Prediksi:**
-    Menggunakan Tren ({next_trend_score}) dan Kurs ({next_usd_idr})
-    dari data bulan terakhir.
-    """)
+    st.caption("Berdasarkan tren & data ekonomi terkini.")
 
 with col2:
     st.metric(
-        label="✅ REKOMENDASI PRODUKSI (Unit)",
+        label="✅ REKOMENDASI PRODUKSI",
         value=f"{reco_prod} unit",
-        delta=f"+{safety_units} unit (Safety Stock {safety_stock_percent}%)"
+        delta=f"+{safety_units} unit (Safety Stock)"
     )
-    st.caption(f"""
-    **Target Produksi:**
-    {pred_demand} (Prediksi) + {safety_units} (Buffer Stok).
-    """)
 
 st.markdown("---")
 
 # -----------------------------------------------------------------
-# --- 5. TAMPILKAN VISUALISASI ---
+# --- 5. VISUALISASI ---
 # -----------------------------------------------------------------
+st.subheader(f"Target Produksi: {next_month_text}")
 
-# Visualisasi Risiko Overproduction
-st.subheader("Visualisasi Target Produksi")
-
-avg_historical_sales = df_history['Sales'].mean()
-max_gauge_value = max(avg_historical_sales * 2.0, reco_prod * 1.5)
+avg_sales = df_history['Sales'].mean()
+max_gauge = max(avg_sales * 2.0, reco_prod * 1.5)
 
 fig_gauge = go.Figure(go.Indicator(
     mode = "gauge+number+delta",
     value = reco_prod,
-    title = {'text': "Total Produksi (Unit)"},
+    title = {'text': "Total Unit"},
     delta = {'reference': pred_demand},
     gauge = {
-        'axis': {'range': [0, max_gauge_value]},
-        'bar': {'color': "#2E8B57"}, # SeaGreen
+        'axis': {'range': [0, max_gauge]},
+        'bar': {'color': "#2E8B57"},
         'steps' : [
-            {'range': [0, pred_demand], 'color': "rgba(200, 200, 200, 0.3)"}, # Zona Demand
-            {'range': [pred_demand, reco_prod], 'color': "rgba(255, 165, 0, 0.5)"}, # Zona Safety Stock
+            {'range': [0, pred_demand], 'color': "rgba(200, 200, 200, 0.3)"},
+            {'range': [pred_demand, reco_prod], 'color': "rgba(255, 165, 0, 0.5)"},
         ],
-        'threshold' : {
-            'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': pred_demand
-        }
+        'threshold' : {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': pred_demand}
     }
 ))
-fig_gauge.add_annotation(
-    x=0.5, y=0.25,
-    text=f"Batas Permintaan: {pred_demand}",
-    showarrow=False,
-    font=dict(size=12)
-)
 st.plotly_chart(fig_gauge, use_container_width=True)
 
-
 # -----------------------------------------------------------------
-# --- 6. TAMPILKAN DATA HISTORIS ---
+# --- 6. GRAFIK TREN ---
 # -----------------------------------------------------------------
-st.subheader("Tren Penjualan Historis")
+st.subheader("Tren Historis")
 
-# Grafik Data Historis
 fig_history = go.Figure()
 
-# Trace Penjualan
+# Gunakan kolom 'Month' (Tanggal) untuk sumbu X agar terlihat "Jan 2024", dst
 fig_history.add_trace(go.Scatter(
-    x=df_history['Month'], # Menggunakan format Tanggal String (YYYY-MM)
+    x=df_history['Month'],
     y=df_history['Sales'],
     mode='lines+markers',
-    name='Penjualan (Unit)',
+    name='Penjualan',
     line=dict(color='#1f77b4', width=3)
 ))
 
-# Trace Trend Score (Sumbu Y Kedua)
 fig_history.add_trace(go.Scatter(
     x=df_history['Month'],
     y=df_history['TrendScore'],
@@ -229,70 +223,45 @@ fig_history.add_trace(go.Scatter(
     line=dict(color='#ff7f0e', dash='dot')
 ))
 
-# Layout Chart
 fig_history.update_layout(
-    title='Riwayat Penjualan & Skor Tren',
     xaxis_title='Bulan',
-    yaxis=dict(title='Penjualan', titlefont=dict(color='#1f77b4')),
-    yaxis2=dict(
-        title='Skor Tren',
-        titlefont=dict(color='#ff7f0e'),
-        overlaying='y',
-        side='right'
-    ),
+    yaxis=dict(title='Penjualan'),
+    yaxis2=dict(title='Skor Tren', overlaying='y', side='right'),
     legend=dict(x=0, y=1.1, orientation='h'),
     hovermode="x unified"
 )
 
 st.plotly_chart(fig_history, use_container_width=True)
 
-# Tampilkan Tabel Data (Opsional, disembunyikan dalam expander)
-with st.expander("Lihat Data Mentah"):
-    st.dataframe(df_history, use_container_width=True)
-
-
 # -----------------------------------------------------------------
-# --- 7. EVALUASI MODEL ---
+# --- 7. EVALUASI ---
 # -----------------------------------------------------------------
 st.markdown("---")
-st.header("Evaluasi Akurasi Model")
-
-with st.expander("Klik untuk melihat detail performa model 🔬"):
-
-    # 1. Split Data
-    X = df_history[features]
-    y = df_history[target]
-
-    # Gunakan shuffle=False agar data test adalah data TERBARU (Time Series Split sederhana)
-    # Atau random_state=42 seperti sebelumnya. Untuk time series, biasanya test data adalah data terakhir.
-    # Namun untuk konsistensi dengan kode sebelumnya kita pakai random split.
+with st.expander("Evaluasi Akurasi Model 🔬"):
     X_train_eval, X_test_eval, y_train_eval, y_test_eval = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        df_history[features], df_history[target], test_size=0.2, random_state=42
     )
 
-    # 2. Latih Model Evaluasi
     model_eval = LinearRegression()
     model_eval.fit(X_train_eval, y_train_eval)
-
-    # 3. Prediksi
     y_pred_eval = model_eval.predict(X_test_eval)
 
-    # 4. Metrik
     mae = mean_absolute_error(y_test_eval, y_pred_eval)
-    rmse = np.sqrt(mean_squared_error(y_test_eval, y_pred_eval))
     r2 = r2_score(y_test_eval, y_pred_eval)
 
-    col_eval1, col_eval2, col_eval3 = st.columns(3)
-    col_eval1.metric("R² Score", f"{r2:.2f}")
-    col_eval2.metric("MAE (Error Rata-rata)", f"{mae:.0f} unit")
-    col_eval3.metric("RMSE", f"{rmse:.0f} unit")
+    c1, c2 = st.columns(2)
+    c1.metric("Akurasi (R² Score)", f"{r2:.2f}")
+    c2.metric("Rata-rata Error (MAE)", f"{mae:.0f} unit")
 
-    # 5. Tabel Perbandingan
+    # Tampilkan tabel perbandingan dengan format tanggal yang rapi
+    # Kita gabungkan kembali dengan kolom Month asli untuk tampilan
     results_df = pd.DataFrame({
-        'Index': X_test_eval['MonthIndex'],
+        'MonthIndex': X_test_eval['MonthIndex'],
         'Aktual': y_test_eval,
         'Prediksi': y_pred_eval.round(0)
-    }).sort_values(by='Index')
+    })
 
-    st.write("Perbandingan Data Test (Aktual vs Prediksi):")
-    st.dataframe(results_df, use_container_width=True)
+    # Ambil tanggal asli berdasarkan index
+    results_df['Bulan'] = df_history.loc[results_df.index, 'Month'].apply(lambda x: format_bulan_indo(x) if pd.notnull(x) else x)
+
+    st.dataframe(results_df[['Bulan', 'Aktual', 'Prediksi']].sort_index(), use_container_width=True)
