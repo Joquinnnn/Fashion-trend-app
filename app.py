@@ -177,4 +177,49 @@ fig_gauge = go.Figure(go.Indicator(
             {'range': [0, pred_demand], 'color': "rgba(200, 200, 200, 0.3)"},
             {'range': [pred_demand, reco_prod], 'color': "rgba(255, 165, 0, 0.5)"},
         ],
-        'threshold' : {'line': {'color': "red", 'width':
+        'threshold' : {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': pred_demand}
+    }
+))
+st.plotly_chart(fig_gauge, use_container_width=True)
+
+# -----------------------------------------------------------------
+# --- GRAFIK TREN ---
+# -----------------------------------------------------------------
+st.subheader("Tren Historis (Dari CSV)")
+
+fig_history = go.Figure()
+
+fig_history.add_trace(go.Scatter(
+    x=df_history['Month'],
+    y=df_history['Sales'],
+    mode='lines+markers',
+    name='Penjualan',
+    line=dict(color='#1f77b4', width=3)
+))
+
+fig_history.add_trace(go.Scatter(
+    x=df_history['Month'],
+    y=df_history['TrendScore'],
+    mode='lines',
+    name='Skor Tren',
+    yaxis='y2',
+    line=dict(color='#ff7f0e', dash='dot')
+))
+
+fig_history.update_layout(
+    xaxis_title='Bulan',
+    yaxis=dict(title='Penjualan'),
+    yaxis2=dict(title='Skor Tren', overlaying='y', side='right'),
+    legend=dict(x=0, y=1.1, orientation='h'),
+    hovermode="x unified"
+)
+
+st.plotly_chart(fig_history, use_container_width=True)
+
+# -----------------------------------------------------------------
+# --- TABEL DATA ---
+# -----------------------------------------------------------------
+with st.expander("Lihat Data CSV Lengkap"):
+    df_display = df_history.copy()
+    df_display['Month'] = df_display['Month'].apply(lambda x: format_bulan_indo(x))
+    st.dataframe(df_display, use_container_width=True)
