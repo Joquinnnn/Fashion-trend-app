@@ -19,7 +19,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 # KONFIGURASI HALAMAN
 # -----------------------------------------------------------------
 st.set_page_config(
-    page_title="FashionTrendChecker (CSV Mode)",
+    page_title="FashionTrendChecker (Explained)",
     page_icon="👕",
     layout="wide"
 )
@@ -56,9 +56,11 @@ def load_and_train_model():
         df['TrendScore'] = pd.to_numeric(df['TrendScore'], errors='coerce')
         df['USD_IDR'] = pd.to_numeric(df['USD_IDR'], errors='coerce')
         df = df.dropna()
+
+        # Filter: Hapus data tahun 2020 (MonthIndex < 13) karena anomali pandemi
         df = df[df['MonthIndex'] >= 13]
 
-        # --- LATIH MODEL UTAMA (Untuk Prediksi Masa Depan) ---
+        # --- LATIH MODEL UTAMA ---
         features = ['MonthIndex', 'TrendScore', 'USD_IDR']
         target = 'Sales'
 
@@ -87,15 +89,9 @@ if model is None:
 # PROSES OTOMATISASI (Menentukan Bulan Berikutnya)
 # -----------------------------------------------------------------
 last_row = df_history.iloc[-1]
-
-# 1. Tentukan Bulan Selanjutnya (Target Prediksi)
 next_date = last_row['Month'] + pd.DateOffset(months=1)
 next_month_text = format_bulan_indo(next_date)
-
-# 2. Tentukan Index Selanjutnya
 next_month_index = int(last_row['MonthIndex']) + 1
-
-# 3. Ambil Parameter Terakhir (Asumsi Naive Forecast)
 next_trend_score = float(last_row['TrendScore'])
 next_usd_idr = float(last_row['USD_IDR'])
 
@@ -112,8 +108,6 @@ safety_stock_percent = st.sidebar.slider(
 st.sidebar.markdown("---")
 st.sidebar.subheader("Parameter Otomatis (Terdeteksi)")
 st.sidebar.info(f"Data terakhir: **{format_bulan_indo(last_row['Month'])}**")
-
-# Input field yang disabled (hanya baca)
 st.sidebar.text_input("Target Bulan (Index):", value=str(next_month_index), disabled=True)
 st.sidebar.text_input("Trend Score (Terakhir):", value=str(next_trend_score), disabled=True)
 st.sidebar.text_input("Kurs USD/IDR (Terakhir):", value=str(int(next_usd_idr)), disabled=True)
@@ -122,7 +116,7 @@ st.sidebar.text_input("Kurs USD/IDR (Terakhir):", value=str(int(next_usd_idr)), 
 # -----------------------------------------------------------------
 # UI - HALAMAN UTAMA
 # -----------------------------------------------------------------
-st.title("👕 FashionTrendChecker (CSV Loaded)")
+st.title("👕 FashionTrendChecker (Smart Forecast)")
 st.subheader(f"Prediksi Permintaan: {next_month_text}")
 st.markdown("---")
 
@@ -147,7 +141,7 @@ with col1:
         label=f"Prediksi Permintaan ({next_month_text})",
         value=f"{pred_demand} unit"
     )
-    st.caption("Prediksi AI berdasarkan data CSV historis.")
+    st.caption("Prediksi AI berdasarkan pola 2021-2025.")
 
 with col2:
     st.metric(
@@ -183,10 +177,19 @@ fig_gauge = go.Figure(go.Indicator(
 ))
 st.plotly_chart(fig_gauge, use_container_width=True)
 
+# --- PENJELASAN VISUALISASI (BAGIAN BARU) ---
+st.info("""
+**Cara Membaca Grafik Target:**
+* **Jarum / Angka Utama:** Total unit yang **harus diproduksi** (Rekomendasi Akhir).
+* **Garis Merah Kecil:** Angka **prediksi murni** (berapa banyak yang diprediksi akan laku).
+* **Area Abu-abu:** Zona permintaan pasar (jumlah yang kemungkinan besar terjual habis).
+* **Area Oranye:** Zona **Safety Stock** (cadangan aman agar tidak kehabisan stok jika permintaan melonjak).
+""")
+
 # -----------------------------------------------------------------
 # --- GRAFIK TREN ---
 # -----------------------------------------------------------------
-st.subheader("Tren Historis (Dari CSV)")
+st.subheader("Tren Historis (Data Filtered)")
 
 fig_history = go.Figure()
 
@@ -220,33 +223,31 @@ st.plotly_chart(fig_history, use_container_width=True)
 # -----------------------------------------------------------------
 # --- TABEL DATA ---
 # -----------------------------------------------------------------
-with st.expander("Lihat Data CSV Lengkap"):
+with st.expander("Lihat Data CSV (Mulai Jan 2021)"):
     df_display = df_history.copy()
     df_display['Month'] = df_display['Month'].apply(lambda x: format_bulan_indo(x))
     st.dataframe(df_display, use_container_width=True)
 
 # -----------------------------------------------------------------
-# --- EVALUASI MODEL (BAGIAN BARU) ---
+# --- EVALUASI MODEL ---
 # -----------------------------------------------------------------
 st.markdown("---")
 st.header("🔬 Evaluasi Performa Model")
-st.write("Bagian ini menguji seberapa akurat model dengan membagi data menjadi data latih (80%) dan data uji (20%).")
 
-# 1. Persiapkan Data untuk Evaluasi
+# 1. Persiapkan Data
 X = df_history[features]
 y = df_history[target]
 
-# 2. Split Data (Train/Test)
-# random_state=42 agar hasil pembagiannya konsisten setiap kali dijalankan
+# 2. Split Data
 X_train_eval, X_test_eval, y_train_eval, y_test_eval = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
-# 3. Latih Model Evaluasi (Hanya menggunakan data training)
+# 3. Latih Model Evaluasi
 model_eval = LinearRegression()
 model_eval.fit(X_train_eval, y_train_eval)
 
-# 4. Prediksi menggunakan data Test
+# 4. Prediksi
 y_pred_eval = model_eval.predict(X_test_eval)
 
 # 5. Hitung Metrik
@@ -256,16 +257,15 @@ r2 = r2_score(y_test_eval, y_pred_eval)
 
 # 6. Tampilkan Metrik
 col_eval1, col_eval2, col_eval3 = st.columns(3)
-col_eval1.metric("MAE (Rata-rata Kesalahan)", f"{mae:.2f}", help="Semakin kecil semakin baik. Menunjukkan rata-rata selisih angka prediksi dengan aslinya.")
-col_eval2.metric("RMSE (Akar Kuadrat Error)", f"{rmse:.2f}", help="Semakin kecil semakin baik. Lebih sensitif terhadap kesalahan besar.")
-col_eval3.metric("R² Score (Akurasi Pola)", f"{r2:.4f}", help="Mendekati 1.0 semakin baik. Menunjukkan seberapa baik model mengikuti pola data.")
+col_eval1.metric("MAE (Rata-rata Error)", f"{mae:.2f}")
+col_eval2.metric("RMSE", f"{rmse:.2f}")
+col_eval3.metric("R² Score (Akurasi)", f"{r2:.4f}")
 
 # 7. Visualisasi Actual vs Predicted
 st.subheader("Grafik Prediksi vs Aktual (Data Test)")
 
 fig_eval = go.Figure()
 
-# Titik-titik data (Scatter Plot)
 fig_eval.add_trace(go.Scatter(
     x=y_test_eval,
     y=y_pred_eval,
@@ -274,8 +274,6 @@ fig_eval.add_trace(go.Scatter(
     marker=dict(color='blue', size=10, opacity=0.7)
 ))
 
-# Garis Ideal (Diagonal)
-# Jika prediksi sempurna, titik akan jatuh tepat di garis merah putus-putus ini
 min_val = min(y_test_eval.min(), y_pred_eval.min())
 max_val = max(y_test_eval.max(), y_pred_eval.max())
 
@@ -283,23 +281,15 @@ fig_eval.add_trace(go.Scatter(
     x=[min_val, max_val],
     y=[min_val, max_val],
     mode='lines',
-    name='Garis Ideal (Perfect Prediction)',
+    name='Garis Ideal',
     line=dict(color='red', dash='dash')
 ))
 
 fig_eval.update_layout(
-    xaxis_title="Penjualan Aktual (Data Asli)",
-    yaxis_title="Penjualan Prediksi (Model)",
-    title="Seberapa dekat Prediksi dengan Kenyataan?",
+    xaxis_title="Penjualan Aktual",
+    yaxis_title="Penjualan Prediksi",
+    title=f"Akurasi Model (R² = {r2:.2f})",
     showlegend=True
 )
 
 st.plotly_chart(fig_eval, use_container_width=True)
-
-st.caption("""
-**Cara membaca grafik ini:**
-* **Sumbu X (Bawah):** Nilai penjualan yang sebenarnya terjadi.
-* **Sumbu Y (Kiri):** Nilai penjualan yang diprediksi oleh komputer.
-* **Garis Merah Putus-putus:** Garis sempurna. Jika titik biru berada tepat di garis ini, berarti tebakan model 100% benar.
-* **Titik Biru:** Data pengujian. Semakin dekat titik-titik biru ke garis merah, semakin akurat model Anda.
-""")
