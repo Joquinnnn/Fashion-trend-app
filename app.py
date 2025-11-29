@@ -19,7 +19,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 # KONFIGURASI HALAMAN
 # -----------------------------------------------------------------
 st.set_page_config(
-    page_title="FashionTrendChecker (Final)",
+    page_title="FashionTrendChecker (Explained)",
     page_icon="👕",
     layout="wide"
 )
@@ -28,7 +28,7 @@ st.set_page_config(
 # FUNGSI BANTUAN
 # -----------------------------------------------------------------
 def format_bulan_indo(date_obj):
-    """Mengubah datetime menjadi string bulan Indonesia"""
+    """Mengubah datetime menjadi string bulan Indonesia (Contoh: Februari 2025)"""
     bulan_map = {
         1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April', 5: 'Mei', 6: 'Juni',
         7: 'Juli', 8: 'Agustus', 9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
@@ -57,10 +57,8 @@ def load_and_train_model():
         df['USD_IDR'] = pd.to_numeric(df['USD_IDR'], errors='coerce')
         df = df.dropna()
 
-        # --- FILTER PENTING ---
-        # Membuang data tahun 2020 (MonthIndex < 13) agar model akurat
+        # Filter: Hapus data tahun 2020 (MonthIndex < 13) karena anomali pandemi
         df = df[df['MonthIndex'] >= 13]
-        # ----------------------
 
         # --- LATIH MODEL UTAMA ---
         features = ['MonthIndex', 'TrendScore', 'USD_IDR']
@@ -75,10 +73,10 @@ def load_and_train_model():
         return model, df, features, target
 
     except FileNotFoundError:
-        st.error("ERROR: File 'data_sample.csv' tidak ditemukan.")
+        st.error("ERROR: File 'data_sample.csv' tidak ditemukan. Pastikan file ada di folder yang sama.")
         return None, None, None, None
     except Exception as e:
-        st.error(f"Terjadi kesalahan: {e}")
+        st.error(f"Terjadi kesalahan saat membaca data: {e}")
         return None, None, None, None
 
 # Eksekusi Load Data
@@ -88,7 +86,7 @@ if model is None:
     st.stop()
 
 # -----------------------------------------------------------------
-# PROSES OTOMATISASI
+# PROSES OTOMATISASI (Menentukan Bulan Berikutnya)
 # -----------------------------------------------------------------
 last_row = df_history.iloc[-1]
 next_date = last_row['Month'] + pd.DateOffset(months=1)
@@ -108,11 +106,11 @@ safety_stock_percent = st.sidebar.slider(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Parameter Otomatis")
+st.sidebar.subheader("Parameter Otomatis (Terdeteksi)")
 st.sidebar.info(f"Data terakhir: **{format_bulan_indo(last_row['Month'])}**")
 st.sidebar.text_input("Target Bulan (Index):", value=str(next_month_index), disabled=True)
-st.sidebar.text_input("Trend Score:", value=str(next_trend_score), disabled=True)
-st.sidebar.text_input("Kurs USD/IDR:", value=str(int(next_usd_idr)), disabled=True)
+st.sidebar.text_input("Trend Score (Terakhir):", value=str(next_trend_score), disabled=True)
+st.sidebar.text_input("Kurs USD/IDR (Terakhir):", value=str(int(next_usd_idr)), disabled=True)
 
 
 # -----------------------------------------------------------------
@@ -139,18 +137,26 @@ reco_prod, safety_units = get_production_recommendation(pred_demand, safety_stoc
 # -----------------------------------------------------------------
 col1, col2 = st.columns(2)
 with col1:
-    st.metric("Prediksi Permintaan", f"{pred_demand} unit")
-    st.caption("Berdasarkan pola data Jan 2021 - Jan 2025.")
+    st.metric(
+        label=f"Prediksi Permintaan ({next_month_text})",
+        value=f"{pred_demand} unit"
+    )
+    st.caption("Prediksi AI berdasarkan pola 2021-2025.")
 
 with col2:
-    st.metric("✅ REKOMENDASI PRODUKSI", f"{reco_prod} unit", delta=f"+{safety_units} unit (Safety Stock)")
+    st.metric(
+        label="✅ REKOMENDASI PRODUKSI",
+        value=f"{reco_prod} unit",
+        delta=f"+{safety_units} unit (Safety Stock)"
+    )
 
 st.markdown("---")
 
 # -----------------------------------------------------------------
-# --- VISUALISASI TARGET ---
+# --- VISUALISASI ---
 # -----------------------------------------------------------------
 st.subheader(f"Visualisasi Target: {next_month_text}")
+
 avg_sales = df_history['Sales'].mean()
 max_gauge = max(avg_sales * 2.0, reco_prod * 1.5)
 
@@ -165,31 +171,71 @@ fig_gauge = go.Figure(go.Indicator(
         'steps' : [
             {'range': [0, pred_demand], 'color': "rgba(200, 200, 200, 0.3)"},
             {'range': [pred_demand, reco_prod], 'color': "rgba(255, 165, 0, 0.5)"},
+            # --- PENAMBAHAN ZONA MERAH ---
+            {'range': [reco_prod, max_gauge], 'color': "rgba(255, 0, 0, 0.4)"}
         ],
         'threshold' : {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': pred_demand}
     }
 ))
 st.plotly_chart(fig_gauge, use_container_width=True)
 
+# --- PENJELASAN VISUALISASI (DIPERBARUI) ---
 st.info("""
-**Cara Membaca:** Jarum menunjukkan total rekomendasi produksi.
-Garis merah kecil adalah batas prediksi permintaan murni.
+**Cara Membaca Grafik Target:**
+* **Jarum / Angka Utama:** Total unit yang **harus diproduksi** (Rekomendasi Akhir).
+* **Garis Merah Kecil:** Angka **prediksi murni** (berapa banyak yang diprediksi akan laku).
+* **Area Abu-abu:** Zona permintaan pasar (jumlah yang kemungkinan besar terjual habis).
+* **Area Oranye:** Zona **Safety Stock** (cadangan aman agar tidak kehabisan stok jika permintaan melonjak).
+* **Area Merah:** Zona **Risiko Overproduction** (Sebaiknya jangan produksi melebihi batas ini).
 """)
+
+# -----------------------------------------------------------------
+# --- GRAFIK TREN ---
+# -----------------------------------------------------------------
+st.subheader("Tren Historis (Data Filtered)")
+
+fig_history = go.Figure()
+
+fig_history.add_trace(go.Scatter(
+    x=df_history['Month'],
+    y=df_history['Sales'],
+    mode='lines+markers',
+    name='Penjualan',
+    line=dict(color='#1f77b4', width=3)
+))
+
+fig_history.add_trace(go.Scatter(
+    x=df_history['Month'],
+    y=df_history['TrendScore'],
+    mode='lines',
+    name='Skor Tren',
+    yaxis='y2',
+    line=dict(color='#ff7f0e', dash='dot')
+))
+
+fig_history.update_layout(
+    xaxis_title='Bulan',
+    yaxis=dict(title='Penjualan'),
+    yaxis2=dict(title='Skor Tren', overlaying='y', side='right'),
+    legend=dict(x=0, y=1.1, orientation='h'),
+    hovermode="x unified"
+)
+
+st.plotly_chart(fig_history, use_container_width=True)
 
 # -----------------------------------------------------------------
 # --- TABEL DATA ---
 # -----------------------------------------------------------------
-with st.expander("Lihat Data Historis"):
+with st.expander("Lihat Data CSV (Mulai Jan 2021)"):
     df_display = df_history.copy()
     df_display['Month'] = df_display['Month'].apply(lambda x: format_bulan_indo(x))
     st.dataframe(df_display, use_container_width=True)
 
 # -----------------------------------------------------------------
-# --- EVALUASI MODEL (BAGIAN YANG DIMINTA) ---
+# --- EVALUASI MODEL ---
 # -----------------------------------------------------------------
 st.markdown("---")
 st.header("🔬 Evaluasi Performa Model")
-st.write("Model dilatih menggunakan 80% data dan diuji pada 20% data sisa.")
 
 # 1. Persiapkan Data
 X = df_history[features]
@@ -200,28 +246,29 @@ X_train_eval, X_test_eval, y_train_eval, y_test_eval = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
-# 3. Latih Model & Prediksi
+# 3. Latih Model Evaluasi
 model_eval = LinearRegression()
 model_eval.fit(X_train_eval, y_train_eval)
+
+# 4. Prediksi
 y_pred_eval = model_eval.predict(X_test_eval)
 
-# 4. Metrik
+# 5. Hitung Metrik
 mae = mean_absolute_error(y_test_eval, y_pred_eval)
 rmse = np.sqrt(mean_squared_error(y_test_eval, y_pred_eval))
 r2 = r2_score(y_test_eval, y_pred_eval)
 
-# 5. Tampilkan Angka
+# 6. Tampilkan Metrik
 col_eval1, col_eval2, col_eval3 = st.columns(3)
-col_eval1.metric("MAE", f"{mae:.2f}")
+col_eval1.metric("MAE (Rata-rata Error)", f"{mae:.2f}")
 col_eval2.metric("RMSE", f"{rmse:.2f}")
-col_eval3.metric("R² Score", f"{r2:.4f}")
+col_eval3.metric("R² Score (Akurasi)", f"{r2:.4f}")
 
-# 6. GRAFIK ACTUAL VS PREDICTED (DENGAN GARIS MERAH)
+# 7. Visualisasi Actual vs Predicted
 st.subheader("Grafik Prediksi vs Aktual (Data Test)")
 
 fig_eval = go.Figure()
 
-# Titik Data (Biru)
 fig_eval.add_trace(go.Scatter(
     x=y_test_eval,
     y=y_pred_eval,
@@ -230,7 +277,6 @@ fig_eval.add_trace(go.Scatter(
     marker=dict(color='blue', size=10, opacity=0.7)
 ))
 
-# Garis Ideal (MERAH)
 min_val = min(y_test_eval.min(), y_pred_eval.min())
 max_val = max(y_test_eval.max(), y_pred_eval.max())
 
@@ -238,8 +284,8 @@ fig_eval.add_trace(go.Scatter(
     x=[min_val, max_val],
     y=[min_val, max_val],
     mode='lines',
-    name='Ideal Line',
-    line=dict(color='red', dash='dash', width=2)
+    name='Garis Ideal',
+    line=dict(color='red', dash='dash')
 ))
 
 fig_eval.update_layout(
@@ -250,11 +296,3 @@ fig_eval.update_layout(
 )
 
 st.plotly_chart(fig_eval, use_container_width=True)
-
-# 7. PENJELASAN (SESUAI PERMINTAAN)
-st.caption("""
-**Cara membaca grafik ini:**
-* **Garis Merah Putus-putus (Ideal):** Menunjukkan kondisi prediksi sempurna (100% akurat).
-* **Titik Biru (Data Test):** Menunjukkan hasil prediksi model terhadap data aktual.
-* **Kesimpulan:** Semakin dekat titik-titik biru menempel pada garis merah, semakin akurat model prediksi Anda.
-""")
