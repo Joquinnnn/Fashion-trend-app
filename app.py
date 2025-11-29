@@ -182,23 +182,32 @@ st.plotly_chart(fig_gauge, use_container_width=True)
 # -----------------------------------------------------------------
 # --- INDIKATOR STATUS (BARU) ---
 # -----------------------------------------------------------------
-col_stat1, col_stat2, col_stat3 = st.columns(3)
 
-with col_stat1:
-    st.metric("Prediksi Permintaan", f"{pred_demand} Unit")
+col1, col2 = st.columns(2)
+with col1:
+    st.metric(
+        label=f"Prediksi Permintaan Pasar (Bulan {next_month})",
+        value=f"{pred_demand} unit"
+    )
+    st.caption(f"""
+    Berdasarkan model ML yang dilatih,
+    dengan skor tren {next_trend_score} dan kurs {next_usd_idr},
+    diprediksi akan ada permintaan sebesar **{pred_demand} unit**.
+    """)
 
-with col_stat2:
-    st.metric("Target Produksi", f"{reco_prod} Unit")
+with col2:
+    st.metric(
+        label="✅ REKOMENDASI PRODUKSI (Unit)",
+        value=f"{reco_prod} unit",
+        delta=f"+{safety_units} unit (Safety Stock {safety_stock_percent}%)"
+    )
+    st.caption(f"""
+    Disarankan untuk memproduksi **{reco_prod} unit**.
+    Angka ini mencakup prediksi permintaan ({pred_demand} unit)
+    ditambah cadangan keamanan ({safety_units} unit).
+    """)
 
-with col_stat3:
-    st.markdown("**Status Inventory:**")
-    # Logika Status berdasarkan Safety Stock
-    if safety_stock_percent <= 25:
-        st.success("✅ **Aman (Optimal)**")
-    elif safety_stock_percent <= 40:
-        st.warning("⚠️ **Waspada (Stok Tebal)**")
-    else:
-        st.error("🛑 **Risiko Overproduction**")
+
 
 st.markdown("<br>", unsafe_allow_html=True) # Spasi
 
