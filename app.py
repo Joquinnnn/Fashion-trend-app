@@ -51,7 +51,7 @@ def load_and_train_model():
         df = pd.read_csv("data_sample.csv")
 
         # Konversi format data agar aman
-        df['Month'] = pd.to_datetime(df['Month'])
+        df['Month'] = pd.to_datetime(df['Month'] >= 13)
         df['Sales'] = pd.to_numeric(df['Sales'], errors='coerce')
         df['TrendScore'] = pd.to_numeric(df['TrendScore'], errors='coerce')
         df['USD_IDR'] = pd.to_numeric(df['USD_IDR'], errors='coerce')
