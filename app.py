@@ -51,11 +51,12 @@ def load_and_train_model():
         df = pd.read_csv("data_sample.csv")
 
         # Konversi format data agar aman
-        df['Month'] = pd.to_datetime(df['Month'] >= 13)
+        df['Month'] = pd.to_datetime(df['Month'])
         df['Sales'] = pd.to_numeric(df['Sales'], errors='coerce')
         df['TrendScore'] = pd.to_numeric(df['TrendScore'], errors='coerce')
         df['USD_IDR'] = pd.to_numeric(df['USD_IDR'], errors='coerce')
         df = df.dropna()
+        df = df[df['MonthIndex'] >= 13]
 
         # --- LATIH MODEL UTAMA (Untuk Prediksi Masa Depan) ---
         features = ['MonthIndex', 'TrendScore', 'USD_IDR']
