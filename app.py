@@ -296,3 +296,17 @@ fig_eval.update_layout(
 )
 
 st.plotly_chart(fig_eval, use_container_width=True)
+
+# --- PENJELASAN EVALUASI (BAGIAN BARU) ---
+st.info("""
+**Penjelasan Metrik Evaluasi:**
+* **MAE (Mean Absolute Error):** Rata-rata kesalahan prediksi dalam unit (misal: meleset ±50 baju). Semakin kecil semakin baik.
+* **RMSE (Root Mean Squared Error):** Mirip MAE, tapi lebih sensitif jika ada kesalahan tebak yang sangat fatal.
+* **R² Score:** Skor kepintaran model (0.0 sampai 1.0). Nilai di atas 0.7 artinya model sudah cukup pintar memahami pola pasar.
+
+**Cara Membaca Grafik Scatter:**
+* **Sumbu X:** Kenyataan (Berapa yang laku).
+* **Sumbu Y:** Tebakan Model.
+* **Garis Merah Putus-putus:** Target Sempurna.
+* **Analisis:** Jika titik-titik biru menempel dekat dengan garis merah, berarti prediksi model sangat akurat. Jika menyebar jauh, berarti model masih sering salah tebak.
+""")
